@@ -78,20 +78,20 @@ def __clear_favorites(spot_client: spotipy.Spotify):
         spinner.ok('✅ ')
 
 
-def add_track_to_favorites(spot_client: spotipy.Spotify, track_id: str) -> None:
+def add_track_to_favorites(spot_client: spotipy.Spotify, track_id: str) -> bool:
     try:
-        spot_client.user_playlist_add_tracks(user=spot_client.current_user()['id'],
-                                             playlist_id=spot_playlist_id,
-                                             tracks=[track_id])
+        spot_client.current_user_saved_tracks_add(tracks=[track_id])
+        return True
 
     except spotipy.client.SpotifyException as spot_except:
         print(f"Error adding track {track_id} as favorite.\nMore info:\n{str(spot_except)}")
+        return False
 
 
 def add_track_to_playlist(spot_client: spotipy.Spotify, track_id: str, playlist_id: str) -> None:
     try:
         spot_client.user_playlist_add_tracks(user=spot_client.current_user()['id'],
-                                             playlist_id=spot_playlist_id,
+                                             playlist_id=playlist_id,
                                              tracks=[track_id])
 
     except spotipy.client.SpotifyException as spot_except:
@@ -113,7 +113,7 @@ def get_spotify_track_id(spot_client: spotipy.Spotify, song: str) -> Optional[st
                 return tracks['items'][0]['id']
 
     except spotipy.client.SpotifyException as spot_except:
-        print(str(spot_except))
+        print(f"Error in looking up {song}.\nMore info:\n{str(spot_except)}")
         return None
 
 
@@ -137,18 +137,31 @@ def __get_playlist_track_ids(spot_client: spotipy.Spotify, playlist_name: str) -
         return track_ids
 
     except (FileNotFoundError, IOError) as file_error:
-        print(file_error)
+        print(f"Error opening {playlist_name}.\nMore info:\n{str(file_error)}")
         return None
+
+
+def __add_gpm_thumbs_up_to_spotify(spot_client: spotipy.Spotify) -> None:
+    with yaspin(text='Getting Spotify track IDs...', color='yellow') as spinner:
+        fave_track_ids = __get_playlist_track_ids(spot_client, 'gpm_thumbs_up')
+        spinner.ok('✅ ')
+
+    with yaspin(text='Adding favorites...', color='yellow') as spinner:
+        for track_id in fave_track_ids:
+            fave_added = add_track_to_favorites(spot_client, track_id)
+            retries = 0
+            while not fave_added and retries < 3:
+                spot_client: spotipy.Spotify = get_spot_client()
+                fave_added = add_track_to_favorites(spot_client, track_id)
+                retries += 1
+            if retries == 3:
+                break
+        spinner.ok('✅ ')
 
 
 def main() -> None:
     try:
         spot_client: spotipy.Spotify = get_spot_client()
-        fave_track_ids = __get_playlist_track_ids(spot_client, 'gpm_thumbs_up')
-        with yaspin(text='Adding favorites...', color='yellow') as spinner:
-            for track_id in fave_track_ids:
-                add_track_to_favorites(spot_client, track_id)
-            spinner.ok('✅ ')
 
     except spotipy.client.SpotifyException as spot_except:
         print(f"Error in creating spotipy client.\nMore info:\n{str(spot_except)}")
