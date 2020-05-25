@@ -112,10 +112,11 @@ def __clear_favorites(spot_client: spotipy.Spotify):
             favorites = []
             for item in response['items']:
                 favorites.append(item['track']['id'])
-            spot_client.current_user_saved_tracks_delete(favorites)
+            if len(favorites) > 0:
+                spot_client.current_user_saved_tracks_delete(favorites)
+            else:
+                break
         spinner.ok('✅ ')
-
-    pass
 
 
 def __update_playlist() -> None:
