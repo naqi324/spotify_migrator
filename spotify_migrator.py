@@ -1,4 +1,5 @@
 import configparser
+from pathlib import Path
 from typing import Optional
 
 import spotipy
@@ -16,6 +17,8 @@ spot_max_requests = config['spotify'].getint('max_requests')
 
 spot_scope = 'user-library-read user-library-modify playlist-modify-private playlist-modify-public'
 spot_redirect_uri = 'http://localhost:8080/'
+
+gpm_playlists_root = Path('gpm_playlists')
 
 
 def __get_song_buckets(song_list: list) -> list:
@@ -37,7 +40,7 @@ def __get_gpm_songs() -> Optional[list]:
         return None
 
 
-def __get_spot_client() -> Optional[spotipy.Spotify]:
+def get_spot_client() -> Optional[spotipy.Spotify]:
     try:
         token = util.prompt_for_user_token(username=spot_username,
                                            scope=spot_scope,
@@ -58,51 +61,7 @@ def __get_spot_client() -> Optional[spotipy.Spotify]:
         return None
 
 
-def __add_song_to_playlist(spot_client: spotipy.Spotify, song: str) -> bool:
-    song_missing = False
-    try:
-        response = spot_client.search(q=song,
-                                      type='track',
-                                      limit=1)
-        if response and len(response) > 0 and 'tracks' in response and response['tracks'] \
-                and len(response['tracks']) > 0:
-            tracks = response['tracks']
-
-            if 'items' in tracks and tracks['items'] and len(tracks['items']) > 0 and tracks['items'][0] \
-                    and 'id' in tracks['items'][0] and tracks['items'][0]['id'] \
-                    and len(tracks['items'][0]['id']) > 0:
-                track_id = tracks['items'][0]['id']
-
-                # try:
-                #     spot_client.current_user_saved_tracks_add(tracks=[track_id])
-                #
-                # except spotipy.client.SpotifyException as spot_except:
-                #     print(str(spot_except))
-                #     pass
-
-                try:
-                    spot_client.user_playlist_add_tracks(user=spot_client.current_user()['id'],
-                                                         playlist_id=spot_playlist_id,
-                                                         tracks=[track_id])
-
-                except spotipy.client.SpotifyException as spot_except:
-                    print(str(spot_except))
-                    pass
-
-            else:
-                song_missing = True
-        else:
-            song_missing = True
-
-    except spotipy.client.SpotifyException as spot_except:
-        print(str(spot_except))
-        pass
-
-    return song_missing
-
-
 def __clear_favorites(spot_client: spotipy.Spotify):
-
     with yaspin(text='Removing favorites...', color='yellow') as spinner:
         while True:
             response = spot_client.current_user_saved_tracks(limit=50)
@@ -119,39 +78,82 @@ def __clear_favorites(spot_client: spotipy.Spotify):
         spinner.ok('✅ ')
 
 
-def __update_playlist() -> None:
-    all_songs = __get_gpm_songs()
-    missing_songs = []
+def add_track_to_favorites(spot_client: spotipy.Spotify, track_id: str) -> None:
+    try:
+        spot_client.user_playlist_add_tracks(user=spot_client.current_user()['id'],
+                                             playlist_id=spot_playlist_id,
+                                             tracks=[track_id])
 
-    if all_songs and len(all_songs) > 0:
-        song_buckets = __get_song_buckets(all_songs)
-        for song_bucket in song_buckets:
+    except spotipy.client.SpotifyException as spot_except:
+        print(f"Error adding track {track_id} as favorite.\nMore info:\n{str(spot_except)}")
 
-            try:
-                spot_client: spotipy.Spotify = __get_spot_client()
 
-                if not spot_client:
-                    break
+def add_track_to_playlist(spot_client: spotipy.Spotify, track_id: str, playlist_id: str) -> None:
+    try:
+        spot_client.user_playlist_add_tracks(user=spot_client.current_user()['id'],
+                                             playlist_id=spot_playlist_id,
+                                             tracks=[track_id])
 
-                for song in song_bucket:
-                    print(song)
-                    if __add_song_to_playlist(spot_client, song):
-                        missing_songs.append(song)
+    except spotipy.client.SpotifyException as spot_except:
+        print(f"Error adding track {track_id} to playlist {playlist_id}.\nMore info:\n{str(spot_except)}")
 
-            except spotipy.client.SpotifyException as spot_except:
-                print(str(spot_except))
 
-    missing_songs_rows = '\n'.join(missing_songs)
-    print(f'>>>>>>\nMissing Songs:\n{missing_songs_rows}')
+def get_spotify_track_id(spot_client: spotipy.Spotify, song: str) -> Optional[str]:
+    try:
+        response = spot_client.search(q=song,
+                                      type='track',
+                                      limit=1)
+        if response and len(response) > 0 and 'tracks' in response and response['tracks'] \
+                and len(response['tracks']) > 0:
+            tracks = response['tracks']
+
+            if 'items' in tracks and tracks['items'] and len(tracks['items']) > 0 and tracks['items'][0] \
+                    and 'id' in tracks['items'][0] and tracks['items'][0]['id'] \
+                    and len(tracks['items'][0]['id']) > 0:
+                return tracks['items'][0]['id']
+
+    except spotipy.client.SpotifyException as spot_except:
+        print(str(spot_except))
+        return None
+
+
+def __get_playlist_track_ids(spot_client: spotipy.Spotify, playlist_name: str) -> Optional[list]:
+    track_ids = []
+    try:
+        playlist_fn = f"{playlist_name}.txt"
+        playlist = Path(gpm_playlists_root / playlist_fn)
+
+        with open(playlist, 'r') as pl_fh:
+            tracks = pl_fh.readlines()
+
+        if len(tracks) > 9999:
+            tracks = tracks[:9999]
+
+        for track in tracks:
+            track_id = get_spotify_track_id(spot_client, track)
+            if track_id:
+                track_ids.append(track_id)
+
+        return track_ids
+
+    except (FileNotFoundError, IOError) as file_error:
+        print(file_error)
+        return None
 
 
 def main() -> None:
     try:
-        spot_client: spotipy.Spotify = __get_spot_client()
-        __clear_favorites(spot_client)
+        spot_client: spotipy.Spotify = get_spot_client()
+        fave_track_ids = __get_playlist_track_ids(spot_client, 'gpm_thumbs_up')
+        with yaspin(text='Adding favorites...', color='yellow') as spinner:
+            for track_id in fave_track_ids:
+                add_track_to_favorites(spot_client, track_id)
+            spinner.ok('✅ ')
 
     except spotipy.client.SpotifyException as spot_except:
-        print(str(spot_except))
+        print(f"Error in creating spotipy client.\nMore info:\n{str(spot_except)}")
+
+    print(f"All done!")
 
 
 if __name__ == '__main__':
