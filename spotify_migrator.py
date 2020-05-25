@@ -3,6 +3,7 @@ from typing import Optional
 
 import spotipy
 import spotipy.util as util
+from yaspin import yaspin
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -26,7 +27,7 @@ def __get_song_buckets(song_list: list) -> list:
 
 def __get_gpm_songs() -> Optional[list]:
     try:
-        with open('GPMLibraryParsed.txt', 'r') as gpm_fh:
+        with open('gpm_songs.txt', 'r') as gpm_fh:
             songs = gpm_fh.readlines()
 
         return songs
@@ -44,11 +45,12 @@ def __get_spot_client() -> Optional[spotipy.Spotify]:
                                            client_secret=spot_client_secret,
                                            redirect_uri=spot_redirect_uri)
         sp = spotipy.Spotify(auth=token,
-                             requests_timeout=20,
-                             status_forcelist=[500, 502],
-                             retries=2,
-                             status_retries=2,
-                             backoff_factor=0.5)
+                             # requests_timeout=20,
+                             # status_forcelist=[500, 502],
+                             # retries=2,
+                             # status_retries=2,
+                             # backoff_factor=0.5
+                             )
         return sp
 
     except spotipy.client.SpotifyException as spot_except:
@@ -71,12 +73,12 @@ def __add_song_to_playlist(spot_client: spotipy.Spotify, song: str) -> bool:
                     and len(tracks['items'][0]['id']) > 0:
                 track_id = tracks['items'][0]['id']
 
-                try:
-                    spot_client.current_user_saved_tracks_add(tracks=[track_id])
-
-                except spotipy.client.SpotifyException as spot_except:
-                    print(str(spot_except))
-                    pass
+                # try:
+                #     spot_client.current_user_saved_tracks_add(tracks=[track_id])
+                #
+                # except spotipy.client.SpotifyException as spot_except:
+                #     print(str(spot_except))
+                #     pass
 
                 try:
                     spot_client.user_playlist_add_tracks(user=spot_client.current_user()['id'],
@@ -99,7 +101,24 @@ def __add_song_to_playlist(spot_client: spotipy.Spotify, song: str) -> bool:
     return song_missing
 
 
-def main() -> None:
+def __clear_favorites(spot_client: spotipy.Spotify):
+
+    with yaspin(text='Removing favorites...', color='yellow') as spinner:
+        while True:
+            response = spot_client.current_user_saved_tracks(limit=50)
+            if not response:
+                break
+
+            favorites = []
+            for item in response['items']:
+                favorites.append(item['track']['id'])
+            spot_client.current_user_saved_tracks_delete(favorites)
+        spinner.ok('✅ ')
+
+    pass
+
+
+def __update_playlist() -> None:
     all_songs = __get_gpm_songs()
     missing_songs = []
 
@@ -123,6 +142,15 @@ def main() -> None:
 
     missing_songs_rows = '\n'.join(missing_songs)
     print(f'>>>>>>\nMissing Songs:\n{missing_songs_rows}')
+
+
+def main() -> None:
+    try:
+        spot_client: spotipy.Spotify = __get_spot_client()
+        __clear_favorites(spot_client)
+
+    except spotipy.client.SpotifyException as spot_except:
+        print(str(spot_except))
 
 
 if __name__ == '__main__':
