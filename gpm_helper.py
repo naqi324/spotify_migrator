@@ -43,9 +43,11 @@ def main() -> None:
         gpm_client.perform_oauth()
 
     if gpm_client:
-        top_songs = __get_top_songs(gpm_client)
-        if len(top_songs) > 0:
-            __save_playlist_locally('gpm_thumbs_up', top_songs)
+        # Save thumbs up songs from GPM to local playlist file
+        # top_songs = __get_top_songs(gpm_client)
+        # if len(top_songs) > 0:
+        #     __save_playlist_locally('gpm_thumbs_up', top_songs)
+        pass
 
 
 if __name__ == '__main__':
